@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::path::Path;
-use std::path::PathBuf;
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use anyhow::Result;
@@ -21,13 +18,14 @@ struct Args {
     out: Option<PathBuf>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Immdiate {
     Int(u8),
     Label(String),
 }
 
-#[derive(Debug)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
 enum Operater {
     OR,
     NAND,
@@ -37,7 +35,8 @@ enum Operater {
     SUB,
 }
 
-#[derive(Debug)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
 enum Condition {
     OFF,
     EQ,
@@ -49,7 +48,8 @@ enum Condition {
     GR,
 }
 
-#[derive(Debug)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
 enum Reg {
     REG0,
     REG1,
@@ -60,10 +60,11 @@ enum Reg {
     IO,
 }
 
-#[derive(Debug)]
+#[repr(u8)]
+#[derive(Debug, Clone)]
 enum Stmt {
     LET(Immdiate),
-    Calc(Operater, Reg),
+    Calc(Operater),
     COPY(Reg, Reg),
     Cond(Condition),
     Label(String),
@@ -96,22 +97,17 @@ fn parse<R: BufRead>(input: R) -> Result<Vec<Stmt>> {
                 } else {
                     let operand: i32 = operand.parse()?;
                     if operand >= 1 << 5 {
-                        Err(anyhow::anyhow!(
-                            "Immdiate number must less than 2^6. :{:?}",
+                        anyhow::bail!(
+                            "Immdiate number must less than 2^6, by restriction of the architecture. :{:}",
                             operand
-                        ))?;
+                        );
                     } else if operand < 0 {
-                        Err(anyhow::anyhow!(
-                            "Immdiate number must be non negative. :{:?}",
-                            operand
-                        ))?;
+                        anyhow::bail!("Immdiate number must be non negative. :{:?}", operand);
                     }
                     Stmt::LET(Immdiate::Int(operand as u8))
                 }
             }
-            token if is_calc(token) => {
-                parse_calc(token, tokens.next().context("missing a target registor")?)?
-            }
+            token if is_calc(token) => parse_calc(token)?,
             "COPY" => parse_copy(
                 tokens.next().context("missing target registors")?,
                 tokens.next().context("missing target registors")?,
@@ -136,7 +132,7 @@ fn parse_reg(reg: &str) -> Result<Reg> {
         "IO" => Reg::IO,
         "OUT" => Reg::IO,
         "IN" => Reg::IO,
-        _ => Err(anyhow::anyhow!("Unexpected Registor name"))?,
+        _ => anyhow::bail!("Unexpected Registor name"),
     })
 }
 
@@ -149,15 +145,14 @@ fn is_cond(token: &str) -> bool {
         "OFF" | "EQ" | "LS" | "LSEQ" | "ON" | "NEQ" | "GREQ" | "GR"
     )
 }
-fn parse_calc(operater: &str, target: &str) -> Result<Stmt> {
-    let reg = parse_reg(target)?;
+fn parse_calc(operater: &str) -> Result<Stmt> {
     Ok(match operater {
-        "OR" => Stmt::Calc(Operater::OR, reg),
-        "NAND" => Stmt::Calc(Operater::NAND, reg),
-        "NOR" => Stmt::Calc(Operater::NOR, reg),
-        "AND" => Stmt::Calc(Operater::AND, reg),
-        "ADD" => Stmt::Calc(Operater::ADD, reg),
-        "SUB" => Stmt::Calc(Operater::SUB, reg),
+        "OR" => Stmt::Calc(Operater::OR),
+        "NAND" => Stmt::Calc(Operater::NAND),
+        "NOR" => Stmt::Calc(Operater::NOR),
+        "AND" => Stmt::Calc(Operater::AND),
+        "ADD" => Stmt::Calc(Operater::ADD),
+        "SUB" => Stmt::Calc(Operater::SUB),
         _ => unreachable!("pre check is needed"),
     })
 }
@@ -174,7 +169,7 @@ fn parse_cond(condition: &str) -> Result<Stmt> {
         "NEQ" => Stmt::Cond(Condition::NEQ),
         "GREQ" => Stmt::Cond(Condition::GREQ),
         "GR" => Stmt::Cond(Condition::GR),
-        _ => Err(anyhow::anyhow!("Unexpected condition type"))?,
+        _ => anyhow::bail!("Unexpected condition type"),
     })
 }
 
