@@ -173,17 +173,79 @@ fn parse_cond(condition: &str) -> Result<Stmt> {
     })
 }
 
+fn solve_labels(stmts: &[Stmt]) -> Result<HashMap<&str, u8>> {
+    let mut labels = HashMap::new();
+
+    let mut i = 0;
+    for stmt in stmts {
+        match stmt {
+            Stmt::Label(label) => {
+                labels.insert(label.as_str(), i);
+                if i > 1 << 5 {
+                    anyhow::bail!(
+                        "label \"@{}\" can't fit in 6 bit, for restriction of the architecture.",
+                        label
+                    );
+                }
+            }
+            _ => i += 1,
+        }
+    }
+
+    Ok(labels)
+}
+
+fn generate_code(stmts: &[Stmt]) -> Result<Vec<u8>> {
+    let labels = solve_labels(stmts)?;
+
+    let mut code: Vec<u8> = Vec::new();
+    for stmt in stmts {
+        let opcode = match stmt {
+            Stmt::LET(immdiate) => match immdiate {
+                Immdiate::Int(num) => *num,
+                Immdiate::Label(label) => {
+                    let pos = labels.get(label.as_str()).context("")?;
+                    *pos
+                }
+            },
+            Stmt::Calc(operater) => *operater as u8 + (1 << 6),
+            Stmt::COPY(dest, src) => (*dest as u8) + ((*src as u8) << 3) + (2 << 6),
+            Stmt::Cond(condition) => (*condition as u8) + (3 << 6),
+            Stmt::Label(_) => continue,
+        };
+        code.push(opcode);
+    }
+
+    Ok(code)
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    let source: Box<dyn BufRead> = if args.file.as_path() == Path::new("-") {
-        Box::new(io::stdin().lock())
+    let infile = (args.file.as_path() != Path::new("-")).then_some(args.file.as_path());
+
+    let source: Box<dyn BufRead> = if let Some(file) = infile {
+        Box::new(BufReader::new(File::open(file)?))
     } else {
-        Box::new(BufReader::new(File::open(args.file.as_path())?))
+        Box::new(io::stdin().lock())
     };
 
     let stmts = parse(source)?;
-    dbg!(stmts);
+    dbg!(&stmts);
+
+    let code = generate_code(&stmts)?;
+    dbg!(&code);
+
+    let mut outfile = args
+        .out
+        .unwrap_or_else(|| infile.unwrap_or(Path::new("stdin.os")).to_path_buf());
+    outfile.set_extension("out");
+
+    let mut out = BufWriter::new(File::create(outfile)?);
+    for op in code {
+        write!(out, "{op}")?;
+        out.write_all(b"\n")?;
+    }
 
     Ok(())
 }
