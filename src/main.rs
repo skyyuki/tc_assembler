@@ -113,7 +113,7 @@ fn parse<R: BufRead>(input: R) -> Result<Vec<Stmt>> {
                 tokens.next().context("missing target registors")?,
             )?,
             token if is_cond(token) => parse_cond(token)?,
-            _ => todo!(),
+            _ => anyhow::bail!("Unexpected opcode name"),
         };
         stmts.push(stmt);
     }
@@ -231,10 +231,8 @@ fn main() -> Result<()> {
     };
 
     let stmts = parse(source)?;
-    dbg!(&stmts);
 
     let code = generate_code(&stmts)?;
-    dbg!(&code);
 
     let mut outfile = args
         .out
