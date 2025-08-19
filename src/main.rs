@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -24,6 +25,7 @@ enum Immdiate {
     Label(String),
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 enum Operater {
@@ -35,6 +37,7 @@ enum Operater {
     SUB,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 enum Condition {
@@ -60,6 +63,7 @@ enum Reg {
     IO,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 #[derive(Debug, Clone)]
 enum Stmt {
@@ -68,6 +72,27 @@ enum Stmt {
     COPY(Reg, Reg),
     Cond(Condition),
     Label(String),
+}
+
+impl Display for Immdiate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Immdiate::Int(num) => write!(f, "{num}"),
+            Immdiate::Label(label) => write!(f, "@{label}"),
+        }
+    }
+}
+
+impl Display for Stmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Stmt::LET(immdiate) => write!(f, "LET {immdiate}"),
+            Stmt::Calc(operater) => write!(f, "{operater:?}"),
+            Stmt::COPY(dist, src) => write!(f, "COPY {dist:?} {src:?}"),
+            Stmt::Cond(condition) => write!(f, "{condition:?}"),
+            Stmt::Label(lable) => write!(f, "@{lable}:"),
+        }
+    }
 }
 
 fn parse<R: BufRead>(input: R) -> Result<Vec<Stmt>> {
@@ -219,6 +244,22 @@ fn generate_code(stmts: &[Stmt]) -> Result<Vec<u8>> {
     Ok(code)
 }
 
+fn write_output<W: Write>(mut out: W, stmts: &[Stmt], code: &[u8]) -> Result<()> {
+    let mut code_it = code.iter();
+    for stmt in stmts {
+        if let Stmt::Label(lable) = stmt {
+            write!(out, "    # @{lable}:")?;
+        } else {
+            let op = code_it
+                .next()
+                .expect("length of code and stmt is not consistent");
+            write!(out, "{op:<3} # {stmt}")?;
+        }
+        out.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -239,11 +280,8 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| infile.unwrap_or(Path::new("stdin.os")).to_path_buf());
     outfile.set_extension("out");
 
-    let mut out = BufWriter::new(File::create(outfile)?);
-    for op in code {
-        write!(out, "{op}")?;
-        out.write_all(b"\n")?;
-    }
+    let out = BufWriter::new(File::create(outfile)?);
+    write_output(out, &stmts, &code)?;
 
     Ok(())
 }
