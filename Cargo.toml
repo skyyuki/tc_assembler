@@ -2,3 +2,4 @@
 members = [
     "ot-asm",
 ]
+resolver = "3"
