@@ -1,9 +1,4 @@
-[package]
-name = "tc_ot_asm"
-version = "0.1.0"
-edition = "2024"
-description = "The assembler for The OVERTURE Architecture in Turing Complete"
-
-[dependencies]
-anyhow = "1.0.99"
-clap = { version = "4.5.45", features = ["derive"] }
+[workspace]
+members = [
+    "ot-asm",
+]
