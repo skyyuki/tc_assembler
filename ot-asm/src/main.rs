@@ -20,7 +20,7 @@ struct Args {
 }
 
 #[derive(Debug, Clone)]
-enum Immdiate {
+enum Immediate {
     Int(u8),
     Label(String),
 }
@@ -67,18 +67,18 @@ enum Reg {
 #[repr(u8)]
 #[derive(Debug, Clone)]
 enum Stmt {
-    LET(Immdiate),
+    LET(Immediate),
     Calc(Operater),
     COPY(Reg, Reg),
     Cond(Condition),
     Label(String),
 }
 
-impl Display for Immdiate {
+impl Display for Immediate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Immdiate::Int(num) => write!(f, "{num}"),
-            Immdiate::Label(label) => write!(f, "@{label}"),
+            Immediate::Int(num) => write!(f, "{num}"),
+            Immediate::Label(label) => write!(f, "@{label}"),
         }
     }
 }
@@ -127,18 +127,18 @@ fn parse_line(line: &str) -> Result<Option<Stmt>> {
         "LET" => {
             let operand = tokens.next().context("missing immdiate number")?;
             if let Some(label) = operand.strip_prefix('@') {
-                Stmt::LET(Immdiate::Label(label.to_string()))
+                Stmt::LET(Immediate::Label(label.to_string()))
             } else {
                 let operand: i32 = operand.parse()?;
-                if operand >= 1 << 5 {
+                if operand >= 1 << 6 {
                     anyhow::bail!(
-                        "Immdiate number must less than 2^6, by restriction of the architecture. :{:}",
+                        "Immediate number must less than 2^6, by restriction of the architecture. :{:}",
                         operand
                     );
                 } else if operand < 0 {
-                    anyhow::bail!("Immdiate number must be non negative. :{:?}", operand);
+                    anyhow::bail!("Immediate number must be non negative. :{:?}", operand);
                 }
-                Stmt::LET(Immdiate::Int(operand as u8))
+                Stmt::LET(Immediate::Int(operand as u8))
             }
         }
         token if is_calc(token) => parse_calc(token)?,
@@ -218,7 +218,7 @@ fn solve_labels(stmts: &[Stmt]) -> Result<HashMap<&str, u8>> {
         match stmt {
             Stmt::Label(label) => {
                 labels.insert(label.as_str(), i);
-                if i > 1 << 5 {
+                if i > 1 << 6 {
                     anyhow::bail!(
                         "label \"@{}\" can't fit in 6 bit, for restriction of the architecture.",
                         label
@@ -239,9 +239,9 @@ fn generate_code(stmts: &[Stmt]) -> Result<Vec<u8>> {
     for stmt in stmts {
         let opcode = match stmt {
             Stmt::LET(immdiate) => match immdiate {
-                Immdiate::Int(num) => *num,
-                Immdiate::Label(label) => {
-                    let pos = labels.get(label.as_str()).context("")?;
+                Immediate::Int(num) => *num,
+                Immediate::Label(label) => {
+                    let pos = labels.get(label.as_str()).context("Label not found")?;
                     *pos
                 }
             },
