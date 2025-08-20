@@ -98,51 +98,63 @@ impl Display for Stmt {
 fn parse<R: BufRead>(input: R) -> Result<Vec<Stmt>> {
     let mut stmts = Vec::new();
     // TODO: handle ; as newline
-    for line in input.lines() {
+    for (line_i, line) in input.lines().enumerate() {
         let line = line?;
-        let mut tokens: std::str::SplitWhitespace<'_> = line.split_whitespace();
-        let Some(token) = tokens.next() else {
-            continue;
-        };
-        if token.starts_with("#") {
-            continue;
+        let stmt = parse_line(&line)
+            .with_context(|| format!("Parsing error on line:{}: {}", line_i + 1, line))?;
+        if let Some(stmt) = stmt {
+            stmts.push(stmt);
         }
-        if let Some(label) = token
-            .strip_prefix('@')
-            .and_then(|token| token.strip_suffix(':'))
-        {
-            stmts.push(Stmt::Label(String::from(label)));
-            continue;
-        }
-        let stmt = match token.to_uppercase().as_str() {
-            "LET" => {
-                let operand = tokens.next().context("missing immdiate number")?;
-                if let Some(label) = operand.strip_prefix('@') {
-                    Stmt::LET(Immdiate::Label(label.to_string()))
-                } else {
-                    let operand: i32 = operand.parse()?;
-                    if operand >= 1 << 5 {
-                        anyhow::bail!(
-                            "Immdiate number must less than 2^6, by restriction of the architecture. :{:}",
-                            operand
-                        );
-                    } else if operand < 0 {
-                        anyhow::bail!("Immdiate number must be non negative. :{:?}", operand);
-                    }
-                    Stmt::LET(Immdiate::Int(operand as u8))
-                }
-            }
-            token if is_calc(token) => parse_calc(token)?,
-            "COPY" => parse_copy(
-                tokens.next().context("missing target registors")?,
-                tokens.next().context("missing target registors")?,
-            )?,
-            token if is_cond(token) => parse_cond(token)?,
-            _ => anyhow::bail!("Unexpected opcode name"),
-        };
-        stmts.push(stmt);
     }
     Ok(stmts)
+}
+
+fn parse_line(line: &str) -> Result<Option<Stmt>> {
+    let mut tokens: std::str::SplitWhitespace<'_> = line.split_whitespace();
+    let Some(token) = tokens.next() else {
+        return Ok(None);
+    };
+    if token.starts_with("#") {
+        return Ok(None);
+    }
+    if let Some(label) = token
+        .strip_prefix('@')
+        .and_then(|token| token.strip_suffix(':'))
+    {
+        return Ok(Some(Stmt::Label(String::from(label))));
+    }
+    let stmt = match token.to_uppercase().as_str() {
+        "LET" => {
+            let operand = tokens.next().context("missing immdiate number")?;
+            if let Some(label) = operand.strip_prefix('@') {
+                Stmt::LET(Immdiate::Label(label.to_string()))
+            } else {
+                let operand: i32 = operand.parse()?;
+                if operand >= 1 << 5 {
+                    anyhow::bail!(
+                        "Immdiate number must less than 2^6, by restriction of the architecture. :{:}",
+                        operand
+                    );
+                } else if operand < 0 {
+                    anyhow::bail!("Immdiate number must be non negative. :{:?}", operand);
+                }
+                Stmt::LET(Immdiate::Int(operand as u8))
+            }
+        }
+        token if is_calc(token) => parse_calc(token)?,
+        "COPY" => parse_copy(
+            tokens.next().context("missing target registors")?,
+            tokens.next().context("missing target registors")?,
+        )?,
+        token if is_cond(token) => parse_cond(token)?,
+        _ => anyhow::bail!("Unexpected opcode name"),
+    };
+    if let Some(token) = tokens.next()
+        && !token.starts_with('#')
+    {
+        anyhow::bail!("Unexpected number of tokens on a line");
+    }
+    Ok(Some(stmt))
 }
 
 fn parse_reg(reg: &str) -> Result<Reg> {
